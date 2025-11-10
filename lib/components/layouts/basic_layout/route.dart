@@ -76,7 +76,7 @@ class _RouteFormState extends State<RouteForm> {
     super.initState();
   }
 
-  List<Pair<Point, double>> _searchResults(StructureData structData, String search, Point? startPoint) {
+  Future<List<Pair<Point, double>>> _searchResults(StructureData structData, String search, Point? startPoint) async {
     if (currentPoint.value == CurrentPoint.start || startPoint == null) {
       if (simplifyString(search).isEmpty) return [];
 
@@ -85,11 +85,11 @@ class _RouteFormState extends State<RouteForm> {
           .map((point) => Pair(point, 0.0))
           .toList();
     } else {
-      return AStar(structData.graph).findClosestPoints(startPoint, search: search, amount: 10);
+      return await AStar(structData.graph).findClosestPointsAsync(startPoint, search: search, amount: 10);
     }
   }
 
-  onTextChange(String search) {
+  onTextChange(String search) async {
     final startPoint = _startPointController.selectedPoint;
 
     if (search.isEmpty && startPoint == null) {
@@ -97,7 +97,7 @@ class _RouteFormState extends State<RouteForm> {
       return;
     }
     final structData = Provider.of<StructureData>(context, listen: false);
-    final results = _searchResults(structData, search, startPoint);
+    final results = await _searchResults(structData, search, startPoint);
     foundPoints.value = results.sublist(0, math.min(10, results.length));
   }
 
