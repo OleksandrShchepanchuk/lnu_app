@@ -27,15 +27,30 @@ def create_schema(cursor):
     """Create database schema"""
     print('📦 Creating schema...')
     
+    # Structures table (Корпуси)
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS structures (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            subtitle TEXT,
+            default_building_id TEXT,
+            location_address TEXT,
+            location_city TEXT,
+            location_coordinates TEXT
+        )
+    ''')
+    
     # Buildings table
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS buildings (
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             subtitle TEXT,
+            structure_id TEXT NOT NULL,
             default_floor_id TEXT NOT NULL,
             offset_x REAL DEFAULT 0,
-            offset_y REAL DEFAULT 0
+            offset_y REAL DEFAULT 0,
+            FOREIGN KEY (structure_id) REFERENCES structures(id)
         )
     ''')
     
@@ -85,20 +100,25 @@ def create_indexes(cursor):
     """Create database indexes for performance"""
     print('⚡ Creating indexes...')
     
+    cursor.execute('CREATE INDEX IF NOT EXISTS idx_buildings_structure ON buildings(structure_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_label ON points(label)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_floor ON points(floor_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_points_building ON points(building_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_edges_from ON edges(from_point_id)')
     cursor.execute('CREATE INDEX IF NOT EXISTS idx_floors_building ON floors(building_id)')
     
-    print('   ✓ Created 5 indexes')
+    print('   ✓ Created 6 indexes')
 
 def parse_json_file(json_path: str) -> dict[str, any]:
     """
-    Parse the JSON file and extract buildings, floors, points, and edges.
+    Parse the JSON file and extract structures, buildings, floors, points, and edges.
     
     Actual JSON structure:
     {
+        "id": "CM",
+        "name": "Головний Корпус",
+        "defaultBuilding": "CM/BM",
+        "location": {...},
         "buildings": {
             "CM/BM": {
                 "floors": {
@@ -115,11 +135,26 @@ def parse_json_file(json_path: str) -> dict[str, any]:
         data = json.load(f)
     
     result = {
+        'structures': [],
         'buildings': [],
         'floors': [],
         'points': [],
         'edges': []
     }
+    
+    # Parse structure (Корпус) - top level
+    structure_id = data.get('id', 'unknown')
+    location = data.get('location', {})
+    result['structures'].append({
+        'id': structure_id,
+        'name': data.get('name', structure_id),
+        'subtitle': data.get('subtitle'),
+        'default_building_id': data.get('defaultBuilding'),
+        'location_address': location.get('address'),
+        'location_city': location.get('city'),
+        'location_coordinates': json.dumps(location.get('coordinates')) if location.get('coordinates') else None
+    })
+    print(f"Structure: {result['structures'][0]['name']} ({structure_id})")
     
     # Parse buildings
     buildings_data = data.get('buildings', {})
@@ -129,6 +164,7 @@ def parse_json_file(json_path: str) -> dict[str, any]:
             'id': building_id,
             'name': building.get('name', building_id),
             'subtitle': building.get('subtitle'),
+            'structure_id': structure_id,  # Link to parent structure
             'default_floor_id': building.get('defaultFloor'),
             'offset_x': building.get('offset', {}).get('x', 0),
             'offset_y': building.get('offset', {}).get('y', 0)
@@ -177,7 +213,7 @@ def parse_json_file(json_path: str) -> dict[str, any]:
             })
             edge_id += 1
     
-    print(f"Parsed {len(result['buildings'])} buildings, {len(result['floors'])} floors, "
+    print(f"Parsed 1 structure, {len(result['buildings'])} buildings, {len(result['floors'])} floors, "
           f"{len(result['points'])} points, {len(result['edges'])} edges")
     
     return result
@@ -186,15 +222,32 @@ def insert_data(cursor, data):
     """Insert parsed data into database"""
     print('💾 Inserting data...')
     
+    # Insert structures first (parent table)
+    for structure in data['structures']:
+        cursor.execute('''
+            INSERT INTO structures (id, name, subtitle, default_building_id, location_address, location_city, location_coordinates)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            structure['id'],
+            structure['name'],
+            structure['subtitle'],
+            structure['default_building_id'],
+            structure['location_address'],
+            structure['location_city'],
+            structure['location_coordinates']
+        ))
+    print(f'   ✓ Inserted {len(data["structures"])} structures')
+    
     # Insert buildings
     for building in data['buildings']:
         cursor.execute('''
-            INSERT INTO buildings (id, name, subtitle, default_floor_id, offset_x, offset_y)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO buildings (id, name, subtitle, structure_id, default_floor_id, offset_x, offset_y)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         ''', (
             building['id'],
             building['name'],
             building['subtitle'],
+            building['structure_id'],
             building['default_floor_id'],
             building['offset_x'],
             building['offset_y']
@@ -298,6 +351,7 @@ def main():
         # Parse all JSON files
         print('\n📖 Reading JSON files...')
         all_data = {
+            'structures': [],
             'buildings': [],
             'floors': [],
             'points': [],
@@ -307,6 +361,7 @@ def main():
         for json_file in JSON_FILES:
             if os.path.exists(json_file):
                 data = parse_json_file(json_file)
+                all_data['structures'].extend(data['structures'])
                 all_data['buildings'].extend(data['buildings'])
                 all_data['floors'].extend(data['floors'])
                 all_data['points'].extend(data['points'])
@@ -315,6 +370,7 @@ def main():
                 print(f'   ⚠️  File not found: {json_file}')
         
         print(f'\n   ✓ Total parsed:')
+        print(f'     - {len(all_data["structures"])} structures')
         print(f'     - {len(all_data["buildings"])} buildings')
         print(f'     - {len(all_data["floors"])} floors')
         print(f'     - {len(all_data["points"])} points')
