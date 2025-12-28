@@ -20,7 +20,7 @@ class DatabaseHelper {
     return await openDatabase(
       dbPath,
       version: 1,
-      readOnly: true, 
+      readOnly: false, 
     );
   }
 

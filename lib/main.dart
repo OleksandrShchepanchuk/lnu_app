@@ -53,7 +53,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   MapUpdateService().downloadMapIfNeeded().then((_) {

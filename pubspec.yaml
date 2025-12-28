@@ -92,9 +92,8 @@ flutter:
         - assets/icons/MapPin.svg
         - assets/icons/WC.svg
         - assets/graph.json
-
-        # SQLite database file
         - assets/database/lnu_maps.db
+
     #   - images/a_dot_burr.jpeg
     #   - images/a_dot_ham.jpeg
 
