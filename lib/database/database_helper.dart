@@ -21,7 +21,7 @@ class DatabaseHelper {
       dbPath,
       version: 1,
       readOnly: true, 
-    )
+    );
   }
 
 
