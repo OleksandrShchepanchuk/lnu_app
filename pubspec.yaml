@@ -47,6 +47,7 @@ dependencies:
     sqflite: ^2.3.0
     path_provider: ^2.1.1
     path: ^1.8.3
+    dio: ^5.0.0
 
 dev_dependencies:
     flutter_test:
@@ -62,7 +63,6 @@ dev_dependencies:
     build_runner: ^2.4.8
     custom_lint: ^0.6.0
     riverpod_lint: ^2.3.10
-
     # Testing dependencies
     mockito: ^5.4.4
     sqflite_common_ffi: ^2.3.0 # For testing SQLite on desktop
@@ -88,7 +88,6 @@ flutter:
         - assets/s/m/z3.svg
         - assets/s/m/z4.svg
 
-        - assets/CM.nodes.json
         - assets/logo.svg
         - assets/icons/MapPin.svg
         - assets/icons/WC.svg
