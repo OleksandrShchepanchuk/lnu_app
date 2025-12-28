@@ -1,31 +1,34 @@
 import 'package:flutter/material.dart';
-import 'package:lnu_nav_app/database/database_helper.dart';
-import 'package:lnu_nav_app/helpers/ui.dart';
-import 'package:lnu_nav_app/repositories/map_repository.dart';
-import 'package:lnu_nav_app/store/permanent/config-storage.dart';
-import 'package:lnu_nav_app/store/structure-data.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// Providers widget - Sets up dependency injection hierarchy
-/// 
-/// DEPENDENCY CHAIN:
-/// 1. DatabaseHelper (no deps) -> Provides Database
-/// 2. MapRepository (depends on DatabaseHelper) -> Provides data access
-/// 3. StructureData (depends on MapRepository) -> Provides business logic
-/// 
-/// This order ensures proper initialization and allows child widgets
-/// to access any provider they need.
+// Internal App Imports
+import 'package:lnu_nav_app/database/database_helper.dart';
+import 'package:lnu_nav_app/repositories/map_repository.dart';
+import 'package:lnu_nav_app/store/structure-data.dart';
+import 'package:lnu_nav_app/store/permanent/config-storage.dart';
+import 'package:lnu_nav_app/helpers/ui.dart';
+
+/// Root Dependency Injection Container
+///
+/// This widget initializes the dependency graph for the application.
+/// It uses a hierarchical flow:
+/// 1. [DatabaseHelper] (Singleton)
+/// 2. [Database] (Async Future)
+/// 3. [MapRepository] (Data Access Layer)
+/// 4. [StructureData] (Business Logic Layer)
 class Providers extends StatelessWidget {
   final Widget child;
 
-  const Providers({Key? key, required this.child}) : super(key: key);
+  const Providers({super.key, required this.child});
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // ==================== EXISTING PROVIDERS ====================
+        // ---------------------------------------------------------------------
+        // 1. Independent Services
+        // ---------------------------------------------------------------------
         ChangeNotifierProvider<UiModel>(
           create: (_) => UiModel(),
         ),
@@ -33,135 +36,84 @@ class Providers extends StatelessWidget {
           create: (_) => ConfigStorage(),
         ),
 
-        // ==================== DATABASE PROVIDERS ====================
+        // ---------------------------------------------------------------------
+        // 2. Database Infrastructure
+        // ---------------------------------------------------------------------
         
-        // 1. DatabaseHelper Provider (base layer)
-        // Creates a DatabaseHelper instance and initializes the database
+        // Provides the raw DatabaseHelper Singleton
         Provider<DatabaseHelper>(
-          create: (_) => DatabaseHelper(),
-          dispose: (_, helper) => helper.close(), // Clean up on app close
+          create: (_) => DatabaseHelper.instance,
+          dispose: (_, helper) => helper.close(),
         ),
 
-        // 2. Database Provider (depends on DatabaseHelper)
-        // This provides the actual Database instance to other providers
+        // Asynchronously initializes the SQLite Database
+        // Returns null initially, then the Database instance once loaded
         FutureProvider<Database?>(
           create: (context) async {
-            final helper = context.read<DatabaseHelper>();
             try {
+              final helper = context.read<DatabaseHelper>();
               return await helper.getDatabase();
             } catch (e) {
-              print('❌ Failed to initialize database: $e');
+              debugPrint('Critical Error: Failed to initialize database: $e');
               return null;
             }
           },
           initialData: null,
-        ),
-
-        // 3. MapRepository Provider (depends on Database)
-        // Provides data access layer to widgets
-        ProxyProvider<Database?, MapRepository?>(
-          update: (context, database, previous) {
-            if (database == null) {
-              print('⚠️ Database not ready yet');
-              return null;
-            }
-            
-            // Create new repository when database becomes available
-            if (previous == null) {
-              print('✅ Creating MapRepository');
-              return MapRepository(database);
-            }
-            
-            // Reuse existing repository if database hasn't changed
-            return previous;
+          catchError: (_, error) {
+            debugPrint('Database Provider Error: $error');
+            return null;
           },
         ),
 
-        // 4. StructureData Provider (depends on MapRepository)
-        // Updated to use MapRepository instead of JSON loading
+        // ---------------------------------------------------------------------
+        // 3. Data Access Layer (Repositories)
+        // ---------------------------------------------------------------------
+        
+        // Creates the MapRepository only when the Database is ready
+        ProxyProvider<Database?, MapRepository?>(
+          update: (context, database, previous) {
+            // Case 1: Database is still loading or failed
+            if (database == null) {
+              return null; 
+            }
+
+            // Case 2: Repository already exists for this database instance
+            if (previous != null) {
+              return previous;
+            }
+
+            // Case 3: Create new Repository
+            debugPrint('✅ Database connected. Initializing MapRepository.');
+            return MapRepository(database);
+          },
+        ),
+
+        // ---------------------------------------------------------------------
+        // 4. Business Logic / State Management
+        // ---------------------------------------------------------------------
+        
+        // The main store for map structures.
+        // It listens to MapRepository changes and updates accordingly.
         ChangeNotifierProxyProvider<MapRepository?, StructureData>(
           create: (_) => StructureData(),
           update: (context, repository, previous) {
-            // Update the repository reference when it becomes available
-            if (previous != null && repository != null) {
-              previous.repository = repository;
+            final structureData = previous ?? StructureData();
+            
+            // Inject the repository once it is available
+            if (repository != null) {
+              structureData.repository = repository;
+              
+              // Optional: Trigger an initial load if data is empty
+              // if (structureData.structures.isEmpty) {
+              //   structureData.loadInitialData(); 
+              // }
             }
-            return previous ?? StructureData();
+            
+            return structureData;
           },
         ),
       ],
       child: child,
     );
-  }
-}
-
-/// Alternative: If you prefer async initialization with loading screen
-/// This example shows how to handle async database initialization gracefully
-class ProvidersWithAsyncInit extends StatelessWidget {
-  final Widget child;
-  final Widget loadingWidget;
-
-  const ProvidersWithAsyncInit({
-    Key? key,
-    required this.child,
-    this.loadingWidget = const Center(child: CircularProgressIndicator()),
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<DatabaseHelper>(
-      future: _initializeDatabase(),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Center(
-            child: Text('Failed to initialize app: ${snapshot.error}'),
-          );
-        }
-
-        if (!snapshot.hasData) {
-          return loadingWidget;
-        }
-
-        final databaseHelper = snapshot.data!;
-
-        return FutureBuilder<Database>(
-          future: databaseHelper.getDatabase(),
-          builder: (context, dbSnapshot) {
-            if (dbSnapshot.hasError) {
-              return Center(
-                child: Text('Failed to load database: ${dbSnapshot.error}'),
-              );
-            }
-
-            if (!dbSnapshot.hasData) {
-              return loadingWidget;
-            }
-
-            final database = dbSnapshot.data!;
-            final repository = MapRepository(database);
-
-            return MultiProvider(
-              providers: [
-                ChangeNotifierProvider<UiModel>(create: (_) => UiModel()),
-                ChangeNotifierProvider<ConfigStorage>(create: (_) => ConfigStorage()),
-                Provider<DatabaseHelper>.value(value: databaseHelper),
-                Provider<Database>.value(value: database),
-                Provider<MapRepository>.value(value: repository),
-                ChangeNotifierProvider<StructureData>(
-                  create: (_) => StructureData()..repository = repository,
-                ),
-              ],
-              child: child,
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Future<DatabaseHelper> _initializeDatabase() async {
-    final helper = DatabaseHelper();
-    await helper.getDatabase(); // Ensure database is copied and ready
-    return helper;
   }
 }
