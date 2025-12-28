@@ -11,10 +11,14 @@ class MapUpdateService {
   
   final Dio _dio = Dio();
 
-  Future<void> updateMapDatabase() async {
+  Future<void> downloadMapIfNeeded() async {
     try {
-      final String databasesPath = await getDatabasesPath();
-      final String localDbPath = p.join(databasesPath, _dbFileName);
+      final String localDbPath = await getDatabasePath();
+      final File localFile = File(localDbPath);
+
+      if (await localFile.exists()) {
+        return; 
+      }
 
       final Directory tempDir = await getTemporaryDirectory();
       final String tempDbPath = p.join(tempDir.path, 'temp_map_update.db');
@@ -22,13 +26,11 @@ class MapUpdateService {
       await _dio.download(_remoteDbUrl, tempDbPath);
 
       if (!await _verifyDatabase(tempDbPath)) {
-        debugPrint('Remote database verification failed. Update skipped.');
         return;
       }
 
       final File tempFile = File(tempDbPath);
-      final File localFile = File(localDbPath);
-
+      
       if (await localFile.exists()) {
         await localFile.delete();
       }
@@ -36,10 +38,16 @@ class MapUpdateService {
       await tempFile.copy(localDbPath);
       await tempFile.delete();
 
-      debugPrint('Map database updated successfully.');
     } catch (e) {
-      debugPrint('Map update failed: $e');
+      if (kDebugMode) {
+        print('MapUpdateService error: $e');
+      }
     }
+  }
+
+  Future<String> getDatabasePath() async {
+    final String databasesPath = await getDatabasesPath();
+    return p.join(databasesPath, _dbFileName);
   }
 
   Future<bool> _verifyDatabase(String path) async {
