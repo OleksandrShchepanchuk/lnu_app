@@ -56,7 +56,7 @@ class MyApp extends StatelessWidget {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await MapUpdateService()..updateMapDatabase().then((_) {
+  await MapUpdateService().updateMapDatabase().then((_) {
     debugPrint("Background map update check finished");
   });
 
