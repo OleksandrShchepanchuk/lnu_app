@@ -1,25 +1,25 @@
 import 'dart:io';
 import 'package:dio/dio.dart';
-import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 class MapUpdateService {
-  static const String _remoteDbUrl = 'https://raw.githubusercontent.com/OleksandrShchepanchuk/lnu_maps_data/main/lnu_maps.db';
   static const String _dbFileName = 'lnu_maps.db';
-  
   final Dio _dio = Dio();
 
-  Future<void> downloadMapIfNeeded() async {
+  String get _remoteDbUrl => 
+      'https://raw.githubusercontent.com/OleksandrShchepanchuk/lnu_maps_data/main/lnu_maps.db?t=${DateTime.now().millisecondsSinceEpoch}';
+
+  Future<String> getDatabasePath() async {
+    final String databasesPath = await getDatabasesPath();
+    return p.join(databasesPath, _dbFileName);
+  }
+
+  Future<void> updateMapDatabase() async {
     try {
       final String localDbPath = await getDatabasePath();
-      final File localFile = File(localDbPath);
-
-      if (await localFile.exists()) {
-        return; 
-      }
-
+      
       final Directory tempDir = await getTemporaryDirectory();
       final String tempDbPath = p.join(tempDir.path, 'temp_map_update.db');
 
@@ -29,25 +29,23 @@ class MapUpdateService {
         return;
       }
 
-      final File tempFile = File(tempDbPath);
-      
+      final Directory dbDir = Directory(p.dirname(localDbPath));
+      if (!await dbDir.exists()) {
+        await dbDir.create(recursive: true);
+      }
+
+      final File localFile = File(localDbPath);
       if (await localFile.exists()) {
         await localFile.delete();
       }
       
+      final File tempFile = File(tempDbPath);
       await tempFile.copy(localDbPath);
       await tempFile.delete();
 
-    } catch (e) {
-      if (kDebugMode) {
-        print('MapUpdateService error: $e');
-      }
+    } catch (_) {
+      // Error handling logic (e.g. Sentry or Crashlytics) would go here
     }
-  }
-
-  Future<String> getDatabasePath() async {
-    final String databasesPath = await getDatabasesPath();
-    return p.join(databasesPath, _dbFileName);
   }
 
   Future<bool> _verifyDatabase(String path) async {
@@ -56,7 +54,7 @@ class MapUpdateService {
       final List<Map> result = await db.rawQuery('SELECT count(*) FROM points');
       await db.close();
       return result.isNotEmpty;
-    } catch (e) {
+    } catch (_) {
       return false;
     }
   }
