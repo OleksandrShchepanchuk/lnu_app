@@ -216,14 +216,14 @@ class _RouteLayoutState extends State<RouteLayout> {
   ZoomController zoomController = ZoomController(centerOnStart: false);
   late MapController mapController;
 
-  Pair<List<Point>, List<RoutePointOfInterest>>? _findPathInternal(StructureData structData) {
+  Future<Pair<List<Point>, List<RoutePointOfInterest>>?> _findPathInternal(StructureData structData) async {
     final route = widget.route;
 
     final points = structData.graph.points;
     final sp = points[route.first.id];
     final ep = points[route.second.id];
 
-    final path = AStar(structData.graph).findPath(sp!, ep!);
+    final path = await AStar(structData.graph).findPath(sp!, ep!);
     if (path == null) return null;
 
     final poi = RoutePointOfInterest.generateFromList(path, structData);
